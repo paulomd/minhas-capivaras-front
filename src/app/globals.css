@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground: #0a0a0a;
+  --background: #f1f5f9;
+  --brand-orange: #F58220;
+  --brand-blue: #0077aa;
+}
+
+html.dark {
+  --foreground: #ffffff;
+  --background: #1f2a3a;
+}
+
+html {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  color: var(--foreground);
+  background: var(--background);
+}
+
+/* Páginas públicas (cadastro, login, landing) podem rolar */
+html:has(.pagina-publica),
+html:has(.pagina-publica) body {
+  height: auto;
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
