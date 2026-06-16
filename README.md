@@ -18,13 +18,14 @@ Stack: **Next.js 16**, **React 19**, **TypeScript** e **Tailwind CSS**.
 npm install
 ```
 
-2. Crie um arquivo `.env.local` na raiz do frontend (opcional, se a API não estiver no host padrão):
+2. Crie um arquivo `.env.local` na raiz do frontend:
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8090
+# URL do backend Quarkus — usada apenas no servidor Next.js (não exposta ao browser)
+API_URL=http://localhost:8090
 ```
 
-Sem essa variável, o frontend usa `http://localhost:8090` automaticamente.
+Sem essa variável, o servidor usa `http://localhost:8090`. O browser chama apenas `/api/backend/...` no mesmo host do frontend.
 
 ## Desenvolvimento
 

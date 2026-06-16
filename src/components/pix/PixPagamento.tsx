@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { Copy, CheckCircle2 } from "lucide-react";
 import QRCode from "qrcode";
 import { obterToken } from "@/lib/apiFetch";
-import { CADASTRO_EMAIL_KEY, CADASTRO_WIZARD_KEY } from "@/lib/constants";
 import { iniciarPollingPixStatus } from "@/lib/pixPolling";
 import { formatarMoeda } from "@/lib/format";
 import type { Pix } from "@/types/pix";
@@ -42,8 +41,6 @@ export function PixPagamento({
         onPago: () => {
           setPago(true);
           aoPagar?.();
-          sessionStorage.removeItem(CADASTRO_WIZARD_KEY);
-          sessionStorage.removeItem(CADASTRO_EMAIL_KEY);
           window.setTimeout(() => {
             router.push(redirecionarAposPago);
           }, 2000);

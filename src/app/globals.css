@@ -38,7 +38,34 @@ body {
   background: var(--background);
 }
 
-/* Páginas públicas (cadastro, login, landing) podem rolar */
+/* Páginas públicas mantêm texto escuro em cards claros (cadastro, etc.) */
+.pagina-publica {
+  color: #0f172a;
+}
+
+.pagina-publica .bg-white {
+  color-scheme: light;
+}
+
+.pagina-publica .bg-white input:not([type="checkbox"]):not([type="radio"]),
+.pagina-publica .bg-white select,
+.pagina-publica .bg-white textarea {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+.pagina-publica .bg-white input::placeholder {
+  color: #64748b;
+}
+
+.pagina-publica .bg-white input:-webkit-autofill,
+.pagina-publica .bg-white input:-webkit-autofill:hover,
+.pagina-publica .bg-white input:-webkit-autofill:focus,
+.pagina-publica .bg-white input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset;
+  -webkit-text-fill-color: #0f172a;
+  caret-color: #0f172a;
+}
 html:has(.pagina-publica),
 html:has(.pagina-publica) body {
   height: auto;

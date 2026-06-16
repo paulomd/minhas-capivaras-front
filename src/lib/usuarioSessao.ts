@@ -1,4 +1,5 @@
-import { getApiUrl, PERFIL_STORAGE_KEY } from "@/lib/constants";
+import { PERFIL_STORAGE_KEY } from "@/lib/constants";
+import { resolveApiUrl } from "@/lib/apiBase";
 
 export type UsuarioPerfilSessao = {
   id: number;
@@ -19,7 +20,7 @@ export type UsuarioPerfilSessao = {
 export async function buscarPerfilUsuario(
   token: string,
 ): Promise<UsuarioPerfilSessao> {
-  const resposta = await fetch(`${getApiUrl()}/usuarios/perfil`, {
+  const resposta = await fetch(resolveApiUrl("/usuarios/perfil"), {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",

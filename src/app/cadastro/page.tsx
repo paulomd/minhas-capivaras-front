@@ -8,12 +8,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import SenhaInput, { validarSenha } from "@/components/SenhaInput";
 import { PixPagamento } from "@/components/pix/PixPagamento";
 import { ApiError, apiFetch } from "@/lib/apiFetch";
-import { buscarPerfilUsuario } from "@/lib/usuarioSessao";
-import {
-  CADASTRO_EMAIL_KEY,
-  CADASTRO_WIZARD_KEY,
-  TOKEN_STORAGE_KEY,
-} from "@/lib/constants";
+import { TOKEN_STORAGE_KEY } from "@/lib/constants";
 import { PlanoCardSelecao } from "@/components/planos/PlanoCardSelecao";
 import { PeriodoCardSelecao } from "@/components/planos/PeriodoCardSelecao";
 import type { Plano, PeriodoAssinatura } from "@/types/plano";
@@ -23,7 +18,20 @@ type RegistroResponse = {
   token: string;
 };
 
+const classeInputCadastro =
+  "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-500";
+
 const PASSOS = ["Dados", "Plano", "Período", "Pagamento"];
+
+function ehErroDeEmail(mensagem: string): boolean {
+  const normalizado = mensagem.toLowerCase();
+  return normalizado.includes("email") || normalizado.includes("e-mail");
+}
+
+function ehErroDeTelefone(mensagem: string): boolean {
+  const normalizado = mensagem.toLowerCase();
+  return normalizado.includes("telefone") || normalizado.includes("fone");
+}
 
 export default function CadastroPage() {
   const router = useRouter();
@@ -40,20 +48,38 @@ export default function CadastroPage() {
   const [pix, setPix] = useState<Pix | null>(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [cadastroConcluido, setCadastroConcluido] = useState(false);
+  const [erroEmail, setErroEmail] = useState<string | null>(null);
+  const [erroFone, setErroFone] = useState<string | null>(null);
 
-  const salvarToken = (authToken: string, emailCadastro?: string) => {
-    localStorage.setItem(TOKEN_STORAGE_KEY, authToken);
-    sessionStorage.setItem(CADASTRO_WIZARD_KEY, "1");
-    if (emailCadastro?.trim()) {
-      sessionStorage.setItem(CADASTRO_EMAIL_KEY, emailCadastro.trim());
-    }
-    setToken(authToken);
-    setCadastroConcluido(true);
+  const limparErrosFormulario = () => {
+    setErro(null);
+    setErroEmail(null);
+    setErroFone(null);
   };
 
-  const renovarTokenCadastro = async (): Promise<string | null> => {
-    const emailLogin = email.trim() || sessionStorage.getItem(CADASTRO_EMAIL_KEY) || "";
+  const definirErroFormulario = (mensagem: string) => {
+    if (ehErroDeEmail(mensagem)) {
+      setErroEmail(mensagem);
+      setErro(null);
+      setErroFone(null);
+    } else if (ehErroDeTelefone(mensagem)) {
+      setErroFone(mensagem);
+      setErro(null);
+      setErroEmail(null);
+    } else {
+      setErro(mensagem);
+      setErroEmail(null);
+      setErroFone(null);
+    }
+  };
+
+  const salvarToken = (authToken: string) => {
+    localStorage.setItem(TOKEN_STORAGE_KEY, authToken);
+    setToken(authToken);
+  };
+
+  const renovarToken = async (): Promise<string | null> => {
+    const emailLogin = email.trim();
     if (!emailLogin || !senha) return null;
 
     try {
@@ -62,36 +88,16 @@ export default function CadastroPage() {
         body: JSON.stringify({ login: emailLogin, senha }),
       });
       if (!resp.token) return null;
-      salvarToken(resp.token, emailLogin);
+      salvarToken(resp.token);
       return resp.token;
     } catch {
       return null;
     }
   };
 
-  const tokenValido = async (authToken: string) => {
-    await buscarPerfilUsuario(authToken);
-    return true;
-  };
-
   useEffect(() => {
-    const emailSalvo = sessionStorage.getItem(CADASTRO_EMAIL_KEY);
-    if (emailSalvo) setEmail(emailSalvo);
-
-    const wizardAtivo = sessionStorage.getItem(CADASTRO_WIZARD_KEY) === "1";
     const authSalvo = localStorage.getItem(TOKEN_STORAGE_KEY);
-    if (!wizardAtivo || !authSalvo) return;
-
-    tokenValido(authSalvo)
-      .then(() => {
-        setToken(authSalvo);
-        setCadastroConcluido(true);
-      })
-      .catch(() => {
-        localStorage.removeItem(TOKEN_STORAGE_KEY);
-        setToken(null);
-        setCadastroConcluido(false);
-      });
+    if (authSalvo) setToken(authSalvo);
   }, []);
 
   useEffect(() => {
@@ -109,56 +115,43 @@ export default function CadastroPage() {
 
   const planoSelecionado = planos.find((p) => p.id === planoId) ?? null;
 
+  const autenticarPasso1 = async (emailCadastro: string): Promise<string> => {
+    const resp = await apiFetch<RegistroResponse>("/usuarios/registrar", {
+      method: "POST",
+      body: JSON.stringify({ nome, email: emailCadastro, fone, senha }),
+    });
+    if (!resp.token) {
+      throw new Error("Cadastro realizado, mas a API não retornou o token.");
+    }
+    return resp.token;
+  };
+
   const handlePasso1 = async (e: FormEvent) => {
     e.preventDefault();
-    setErro(null);
+    limparErrosFormulario();
+    const emailCadastro = email.trim();
     const erroSenha = validarSenha(senha);
     if (erroSenha) {
-      setErro(erroSenha);
+      definirErroFormulario(erroSenha);
       return;
     }
     setLoading(true);
     try {
-      if (cadastroConcluido) {
-        const tokenRenovado = await renovarTokenCadastro();
-        if (tokenRenovado) {
-          setPasso(1);
-          return;
-        }
+      await apiFetch(
+        `/usuarios/validar-email-cadastro?email=${encodeURIComponent(emailCadastro)}`,
+      );
 
-        const authSalvo = token ?? localStorage.getItem(TOKEN_STORAGE_KEY);
-        if (authSalvo) {
-          try {
-            await tokenValido(authSalvo);
-            salvarToken(authSalvo, email);
-            setPasso(1);
-            return;
-          } catch {
-            /* tenta registrar ou login abaixo */
-          }
-        }
-      }
-
-      const resp = await apiFetch<RegistroResponse>("/usuarios/registrar", {
-        method: "POST",
-        body: JSON.stringify({ nome, email, fone, senha }),
-      });
-
-      if (!resp.token) {
-        throw new Error("Cadastro realizado, mas a API não retornou o token.");
-      }
-
-      salvarToken(resp.token, email);
+      const authToken = await autenticarPasso1(emailCadastro);
+      salvarToken(authToken);
       setPasso(1);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        const tokenRenovado = await renovarTokenCadastro();
-        if (tokenRenovado) {
-          setPasso(1);
-          return;
-        }
+        definirErroFormulario(err.message);
+        return;
       }
-      setErro(err instanceof Error ? err.message : "Erro ao cadastrar.");
+      definirErroFormulario(
+        err instanceof Error ? err.message : "Erro ao cadastrar.",
+      );
     } finally {
       setLoading(false);
     }
@@ -174,8 +167,6 @@ export default function CadastroPage() {
         token: authToken,
         body: JSON.stringify({ planoId, periodoId: periodoEscolhido }),
       });
-      sessionStorage.removeItem(CADASTRO_WIZARD_KEY);
-      sessionStorage.removeItem(CADASTRO_EMAIL_KEY);
       router.push("/login");
       return;
     }
@@ -200,7 +191,7 @@ export default function CadastroPage() {
     let authToken = token ?? localStorage.getItem(TOKEN_STORAGE_KEY);
 
     if (!authToken?.trim()) {
-      authToken = await renovarTokenCadastro();
+      authToken = await renovarToken();
     }
 
     if (!authToken?.trim()) {
@@ -215,7 +206,7 @@ export default function CadastroPage() {
       await concluirSelecaoPeriodo(authToken, periodoEscolhido);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
-        const tokenRenovado = await renovarTokenCadastro();
+        const tokenRenovado = await renovarToken();
         if (tokenRenovado) {
           try {
             await concluirSelecaoPeriodo(tokenRenovado, periodoEscolhido);
@@ -294,7 +285,7 @@ export default function CadastroPage() {
                   required
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className={classeInputCadastro}
                 />
               </div>
               <div>
@@ -305,9 +296,24 @@ export default function CadastroPage() {
                   type="email"
                   required
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setErroEmail(null);
+                  }}
+                  className={`${classeInputCadastro} ${
+                    erroEmail ? "border-red-500" : ""
+                  }`}
+                  aria-invalid={erroEmail ? true : undefined}
+                  aria-describedby={erroEmail ? "erro-email-cadastro" : undefined}
                 />
+                {erroEmail && (
+                  <p
+                    id="erro-email-cadastro"
+                    className="mt-1 text-sm text-red-700"
+                  >
+                    {erroEmail}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700">
@@ -316,10 +322,25 @@ export default function CadastroPage() {
                 <input
                   required
                   value={fone}
-                  onChange={(e) => setFone(e.target.value)}
+                  onChange={(e) => {
+                    setFone(e.target.value);
+                    setErroFone(null);
+                  }}
                   placeholder="(11) 99999-9999"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className={`${classeInputCadastro} ${
+                    erroFone ? "border-red-500" : ""
+                  }`}
+                  aria-invalid={erroFone ? true : undefined}
+                  aria-describedby={erroFone ? "erro-fone-cadastro" : undefined}
                 />
+                {erroFone && (
+                  <p
+                    id="erro-fone-cadastro"
+                    className="mt-1 text-sm text-red-700"
+                  >
+                    {erroFone}
+                  </p>
+                )}
               </div>
               <SenhaInput
                 id="senha"
@@ -363,10 +384,10 @@ export default function CadastroPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setErro(null);
+                    limparErrosFormulario();
                     setPasso(0);
                   }}
-                  className="flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
+                  className="flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
                 >
                   <ChevronLeft className="h-4 w-4" /> Voltar
                 </button>
@@ -409,7 +430,7 @@ export default function CadastroPage() {
                     setPeriodoId(null);
                     setPasso(1);
                   }}
-                  className="flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50"
+                  className="flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   <ChevronLeft className="h-4 w-4" /> Voltar
                 </button>

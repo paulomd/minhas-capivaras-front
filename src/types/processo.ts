@@ -13,6 +13,13 @@ export type Processo = {
   status: StatusProcesso;
 };
 
+export type ProcessoListagemPaginada = {
+  content: Processo[];
+  total: number;
+  page: number;
+  size: number;
+};
+
 export type ParteProcesso = {
   nome: string;
   polo: string;

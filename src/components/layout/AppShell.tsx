@@ -162,7 +162,7 @@ export function AppShell({ children }: Props) {
   const sair = () => {
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     sessionStorage.removeItem(PERFIL_STORAGE_KEY);
-    router.push("/login");
+    router.push("/");
   };
 
   if (sessaoOk === null) {

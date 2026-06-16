@@ -1,4 +1,5 @@
-import { getApiUrl, TOKEN_STORAGE_KEY } from "@/lib/constants";
+import { TOKEN_STORAGE_KEY } from "@/lib/constants";
+import { resolveApiUrl } from "@/lib/apiBase";
 import { extrairMensagemErroApi } from "@/lib/apiError";
 
 export class ApiError extends Error {
@@ -22,7 +23,7 @@ export async function apiFetch<T>(
   const { token, auth = false, headers, ...rest } = options;
   const authToken = token ?? (auth ? obterToken() : null);
 
-  const resposta = await fetch(`${getApiUrl()}${path}`, {
+  const resposta = await fetch(resolveApiUrl(path), {
     ...rest,
     headers: {
       Accept: "application/json",

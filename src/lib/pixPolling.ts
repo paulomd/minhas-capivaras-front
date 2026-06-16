@@ -1,4 +1,4 @@
-import { getApiUrl } from "@/lib/constants";
+import { resolveApiUrl } from "@/lib/apiBase";
 import { obterToken } from "@/lib/apiFetch";
 import type { PixStatusResponse } from "@/types/pix";
 
@@ -39,7 +39,7 @@ export function iniciarPollingPixStatus(
     }
 
     try {
-      const resposta = await fetch(`${getApiUrl()}/pix/${pixId}/status`, {
+      const resposta = await fetch(resolveApiUrl(`/pix/${pixId}/status`), {
         headers: {
           Accept: "application/json",
           Authorization: `Bearer ${authToken}`,

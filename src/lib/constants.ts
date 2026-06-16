@@ -8,6 +8,3 @@ export const SIDEBAR_RECOLHIDO_KEY = "jurisprime_sidebar_recolhido";
 
 export const BRAND_ORANGE = "#F58220";
 export const BRAND_BLUE = "#0077aa";
-
-export const getApiUrl = () =>
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8090";

@@ -4,10 +4,18 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ChevronUp, FileSearch, Filter, X } from "lucide-react";
 import { ProcessoAcoes } from "@/components/processo/ProcessoAcoes";
+import { ProcessoTabela } from "@/components/processo/ProcessoTabela";
 import { linhasTexto, PartesAdvogados } from "@/components/processo/PartesAdvogados";
+import { VisualizacaoProcessosToggle } from "@/components/processo/VisualizacaoProcessosToggle";
+import { PaginacaoLista } from "@/components/ui/PaginacaoLista";
 import { apiFetch } from "@/lib/apiFetch";
 import { formatarData } from "@/lib/format";
-import type { Processo, StatusProcesso } from "@/types/processo";
+import {
+  obterVisualizacaoProcessosSalva,
+  salvarVisualizacaoProcessos,
+  type VisualizacaoProcessos,
+} from "@/lib/visualizacaoProcessos";
+import type { Processo, ProcessoListagemPaginada, StatusProcesso } from "@/types/processo";
 import type { TribunalPje } from "@/types/tribunal";
 
 type FiltrosProcesso = {
@@ -26,15 +34,22 @@ const FILTROS_PADRAO: FiltrosProcesso = {
   status: "ATIVO",
 };
 
-function montarQueryFiltros(filtros: FiltrosProcesso): string {
+const TAMANHO_PAGINA_PADRAO = 10;
+
+function montarQueryFiltros(
+  filtros: FiltrosProcesso,
+  pagina: number,
+  tamanhoPagina: number,
+): string {
   const params = new URLSearchParams();
   if (filtros.tribunal) params.set("tribunal", filtros.tribunal);
   if (filtros.dataInicio) params.set("dataInicio", filtros.dataInicio);
   if (filtros.dataFim) params.set("dataFim", filtros.dataFim);
   if (filtros.texto.trim()) params.set("texto", filtros.texto.trim());
   params.set("status", filtros.status);
-  const query = params.toString();
-  return query ? `?${query}` : "";
+  params.set("page", String(pagina));
+  params.set("size", String(tamanhoPagina));
+  return `?${params.toString()}`;
 }
 
 function ProcessoCard({
@@ -117,6 +132,9 @@ function ProcessoCard({
 
 export default function ProcessosPage() {
   const [processos, setProcessos] = useState<Processo[]>([]);
+  const [totalProcessos, setTotalProcessos] = useState(0);
+  const [pagina, setPagina] = useState(1);
+  const [tamanhoPagina, setTamanhoPagina] = useState(TAMANHO_PAGINA_PADRAO);
   const [tribunais, setTribunais] = useState<TribunalPje[]>([]);
   const [filtros, setFiltros] = useState<FiltrosProcesso>(FILTROS_PADRAO);
   const [filtrosAplicados, setFiltrosAplicados] = useState<FiltrosProcesso>(FILTROS_PADRAO);
@@ -124,23 +142,53 @@ export default function ProcessosPage() {
   const [carregandoTribunais, setCarregandoTribunais] = useState(true);
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [visualizacao, setVisualizacao] = useState<VisualizacaoProcessos>(() =>
+    typeof window !== "undefined" ? obterVisualizacaoProcessosSalva() : "cards",
+  );
+  const [desktopMd, setDesktopMd] = useState(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia("(min-width: 768px)").matches
+      : false,
+  );
 
-  const carregarProcessos = useCallback(async (filtrosBusca: FiltrosProcesso) => {
-    setCarregando(true);
-    setErro(null);
-    try {
-      const dados = await apiFetch<Processo[]>(
-        `/processos${montarQueryFiltros(filtrosBusca)}`,
-        { auth: true },
-      );
-      setProcessos(Array.isArray(dados) ? dados : []);
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : "Erro ao carregar processos.");
-      setProcessos([]);
-    } finally {
-      setCarregando(false);
-    }
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const atualizar = () => setDesktopMd(mq.matches);
+    atualizar();
+    mq.addEventListener("change", atualizar);
+    return () => mq.removeEventListener("change", atualizar);
   }, []);
+
+  const definirVisualizacao = (nova: VisualizacaoProcessos) => {
+    setVisualizacao(nova);
+    salvarVisualizacaoProcessos(nova);
+  };
+
+  const mostrarCards = !desktopMd || visualizacao === "cards";
+
+  const carregarProcessos = useCallback(
+    async (filtrosBusca: FiltrosProcesso, paginaBusca: number, tamanhoBusca: number) => {
+      setCarregando(true);
+      setErro(null);
+      try {
+        const dados = await apiFetch<ProcessoListagemPaginada>(
+          `/processos${montarQueryFiltros(filtrosBusca, paginaBusca, tamanhoBusca)}`,
+          { auth: true },
+        );
+        setProcessos(Array.isArray(dados.content) ? dados.content : []);
+        setTotalProcessos(dados.total ?? 0);
+        setPagina(dados.page ?? paginaBusca);
+        setTamanhoPagina(dados.size ?? tamanhoBusca);
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : "Erro ao carregar processos.");
+        setProcessos([]);
+        setTotalProcessos(0);
+      } finally {
+        setCarregando(false);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     (async () => {
@@ -156,17 +204,22 @@ export default function ProcessosPage() {
   }, []);
 
   useEffect(() => {
-    carregarProcessos(filtrosAplicados);
-  }, [carregarProcessos, filtrosAplicados]);
+    carregarProcessos(filtrosAplicados, pagina, tamanhoPagina);
+  }, [carregarProcessos, filtrosAplicados, pagina, tamanhoPagina]);
 
   const aplicarFiltros = () => {
+    setPagina(1);
     setFiltrosAplicados({ ...filtros });
   };
 
   const limparFiltros = () => {
     setFiltros(FILTROS_PADRAO);
     setFiltrosAplicados(FILTROS_PADRAO);
+    setPagina(1);
+    setTamanhoPagina(TAMANHO_PAGINA_PADRAO);
   };
+
+  const totalPaginas = Math.max(1, Math.ceil(totalProcessos / tamanhoPagina));
 
   const temFiltrosPendentes =
     filtros.tribunal !== filtrosAplicados.tribunal ||
@@ -182,14 +235,30 @@ export default function ProcessosPage() {
     filtrosAplicados.texto.trim() ||
     filtrosAplicados.status !== "ATIVO";
 
-  const textoQuantidadeRegistros = carregando
-    ? "Carregando processos…"
-    : processos.length === 1
-      ? "1 processo encontrado"
-      : `${processos.length} processos encontrados`;
+  const propsPaginacao = {
+    pagina,
+    totalPaginas,
+    totalRegistros: totalProcessos,
+    tamanhoPagina,
+    onPaginaChange: setPagina,
+    onTamanhoPaginaChange: (tamanho: number) => {
+      setPagina(1);
+      setTamanhoPagina(tamanho);
+    },
+    carregando,
+  };
+
+  const toggleVisualizacao = (
+    <div className="hidden md:inline-flex">
+      <VisualizacaoProcessosToggle
+        valor={visualizacao}
+        onChange={definirVisualizacao}
+      />
+    </div>
+  );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <section>
         <h1 className="text-2xl font-semibold uppercase text-brand-orange">
           Processos
@@ -203,11 +272,12 @@ export default function ProcessosPage() {
         </p>
       </section>
 
+      <div>
       <section className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-panel-border dark:bg-panel-card">
         <button
           type="button"
           onClick={() => setFiltrosAbertos((aberto) => !aberto)}
-          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-slate-900 dark:text-white"
+          className="flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-slate-900 dark:text-white"
           aria-expanded={filtrosAbertos}
         >
           <div className="flex items-center gap-2">
@@ -334,33 +404,60 @@ export default function ProcessosPage() {
         )}
       </section>
 
-      <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
-        {textoQuantidadeRegistros}
-      </p>
-
       {erro && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800/50 dark:bg-red-950/40 dark:text-red-300">
+        <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800/50 dark:bg-red-950/40 dark:text-red-300">
           {erro}
         </div>
       )}
 
       {!carregando && processos.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500 dark:border-panel-border dark:bg-panel-card dark:text-panel-muted">
+        <p className="mt-2 rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500 dark:border-panel-border dark:bg-panel-card dark:text-panel-muted">
           {temFiltrosAtivos
             ? "Nenhum processo encontrado com os filtros aplicados."
             : "Nenhum processo encontrado!"}
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {processos.map((p) => (
-            <ProcessoCard
-              key={p.processoId}
-              processo={p}
-              onStatusAlterado={() => carregarProcessos(filtrosAplicados)}
-            />
-          ))}
-        </div>
+        <>
+          {totalProcessos > 0 && (
+            <div className="mt-2">
+              <PaginacaoLista
+                {...propsPaginacao}
+                inicioExtra={toggleVisualizacao}
+              />
+            </div>
+          )}
+
+          {mostrarCards ? (
+            <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {processos.map((p) => (
+                <ProcessoCard
+                  key={p.processoId}
+                  processo={p}
+                  onStatusAlterado={() =>
+                    carregarProcessos(filtrosAplicados, pagina, tamanhoPagina)
+                  }
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="mt-2">
+              <ProcessoTabela
+                processos={processos}
+                onStatusAlterado={() =>
+                  carregarProcessos(filtrosAplicados, pagina, tamanhoPagina)
+                }
+              />
+            </div>
+          )}
+
+          {totalProcessos > 0 && (
+            <div className="mt-2">
+              <PaginacaoLista {...propsPaginacao} />
+            </div>
+          )}
+        </>
       )}
+      </div>
     </div>
   );
 }
