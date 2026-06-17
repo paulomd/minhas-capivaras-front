@@ -8,6 +8,9 @@ const HEADERS_IGNORADOS = new Set([
   "content-length",
   "host",
   "transfer-encoding",
+  // BFF: o browser chama o Next no mesmo host; não repassar origem evita 403 CORS no Quarkus.
+  "origin",
+  "referer",
 ]);
 
 async function proxy(request: NextRequest, context: RouteContext) {
