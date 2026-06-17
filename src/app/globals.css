@@ -43,6 +43,15 @@ body {
   color: #0f172a;
 }
 
+/* Scroll na própria página — body/html ficam fixos (layout autenticado) */
+main.pagina-publica,
+main.pagina-inicial {
+  height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+
 .pagina-publica .bg-white {
   color-scheme: light;
 }
@@ -66,10 +75,9 @@ body {
   -webkit-text-fill-color: #0f172a;
   caret-color: #0f172a;
 }
-html:has(.pagina-publica),
-html:has(.pagina-publica) body {
-  height: auto;
-  min-height: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
+html:has(main.pagina-publica),
+html:has(main.pagina-inicial),
+html:has(main.pagina-publica) body,
+html:has(main.pagina-inicial) body {
+  overflow: hidden !important;
 }

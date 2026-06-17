@@ -6,9 +6,16 @@ type Props = {
   plano: Plano;
   className?: string;
   compacto?: boolean;
+  /** Lista com ✓ como no site PHP */
+  marcadorCheck?: boolean;
 };
 
-export function PlanoBeneficios({ plano, className = "", compacto = false }: Props) {
+export function PlanoBeneficios({
+  plano,
+  className = "",
+  compacto = false,
+  marcadorCheck = false,
+}: Props) {
   const itens: string[] = [];
 
   if (plano.quantidadeMonitoramento === 1) {
@@ -47,18 +54,28 @@ export function PlanoBeneficios({ plano, className = "", compacto = false }: Pro
 
   return (
     <ul
-      className={`text-left text-slate-600 ${
-        compacto ? "space-y-0.5 text-xs" : "space-y-1.5 text-sm"
-      } ${className}`}
+      className={
+        marcadorCheck
+          ? className
+          : `text-left text-slate-600 ${
+              compacto ? "space-y-0.5 text-xs" : "space-y-1.5 text-sm"
+            } ${className}`
+      }
     >
       {itens.map((item) => (
-        <li key={item} className="flex items-start gap-1.5">
-          <Check
-            className={`shrink-0 text-emerald-600 ${
-              compacto ? "mt-0.5 h-3 w-3" : "mt-0.5 h-4 w-4"
-            }`}
-          />
-          <span>{item}</span>
+        <li key={item} className={marcadorCheck ? "" : "flex items-start gap-1.5"}>
+          {marcadorCheck ? (
+            <>✓ {item}</>
+          ) : (
+            <>
+              <Check
+                className={`shrink-0 text-emerald-600 ${
+                  compacto ? "mt-0.5 h-3 w-3" : "mt-0.5 h-4 w-4"
+                }`}
+              />
+              <span>{item}</span>
+            </>
+          )}
         </li>
       ))}
     </ul>
