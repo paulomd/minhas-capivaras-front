@@ -35,3 +35,10 @@ export type PixHistoricoItem = {
   tipo: TipoPix;
   situacao: SituacaoPix;
 };
+
+export type PixHistoricoPaginado = {
+  content: PixHistoricoItem[];
+  total: number;
+  page: number;
+  size: number;
+};

@@ -7,13 +7,19 @@ import QRCode from "qrcode";
 import { obterToken } from "@/lib/apiFetch";
 import { iniciarPollingPixStatus } from "@/lib/pixPolling";
 import { formatarMoeda } from "@/lib/format";
+import {
+  buscarPerfilUsuario,
+  salvarPerfilSessao,
+} from "@/lib/usuarioSessao";
 import type { Pix } from "@/types/pix";
 
 type Props = {
   pix: Pix;
-  aoPagar?: () => void;
+  aoPagar?: () => void | Promise<void>;
   redirecionarAposPago?: string;
   mensagemPosPagamento?: string;
+  /** Quando true, não redireciona após o pagamento (ex.: monitoramento extra na mesma página). */
+  semRedirecionamento?: boolean;
 };
 
 export function PixPagamento({
@@ -21,11 +27,17 @@ export function PixPagamento({
   aoPagar,
   redirecionarAposPago = "/login",
   mensagemPosPagamento = "Pagamento confirmado! Redirecionando…",
+  semRedirecionamento = false,
 }: Props) {
   const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copiado, setCopiado] = useState(false);
   const [pago, setPago] = useState(false);
+  const aoPagarRef = useRef(aoPagar);
+  const redirecionarRef = useRef(redirecionarAposPago);
+
+  aoPagarRef.current = aoPagar;
+  redirecionarRef.current = redirecionarAposPago;
 
   useEffect(() => {
     if (!canvasRef.current || !pix.copiaCola) return;
@@ -35,21 +47,42 @@ export function PixPagamento({
   }, [pix.copiaCola]);
 
   useEffect(() => {
-    const parar = iniciarPollingPixStatus(
-      pix.id,
-      {
-        onPago: () => {
-          setPago(true);
-          aoPagar?.();
+    const parar = iniciarPollingPixStatus(pix.id, {
+      onPago: () => {
+        setPago(true);
+        void Promise.resolve(aoPagarRef.current?.());
+
+        if (semRedirecionamento) return;
+
+        const redirecionar = async () => {
+          const destino = redirecionarRef.current;
+          const authToken = obterToken();
+          if (authToken) {
+            try {
+              const perfil = await buscarPerfilUsuario(authToken);
+              salvarPerfilSessao(perfil);
+            } catch {
+              /* perfil será recarregado na área autenticada */
+            }
+          }
+
+          router.replace(destino);
           window.setTimeout(() => {
-            router.push(redirecionarAposPago);
-          }, 2000);
-        },
+            const pathAtual = window.location.pathname;
+            if (pathAtual === "/cadastro" || pathAtual.startsWith("/cadastro/")) {
+              window.location.assign(destino);
+            }
+          }, 800);
+        };
+
+        window.setTimeout(() => {
+          void redirecionar();
+        }, 1500);
       },
-      { token: obterToken(), intervaloMs: 2000 },
-    );
+    });
+
     return parar;
-  }, [pix.id, aoPagar, redirecionarAposPago, router]);
+  }, [pix.id, router, semRedirecionamento]);
 
   const copiarPix = async () => {
     try {

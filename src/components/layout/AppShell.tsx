@@ -16,6 +16,7 @@ import {
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { SidebarNav } from "./SidebarNav";
 import { SidebarUserInfo } from "./SidebarUserInfo";
+import { PlanoInativoBanner } from "./PlanoInativoBanner";
 import { ConfirmProvider } from "@/components/ui/ConfirmProvider";
 import { AppMessageProvider } from "./AppMessageProvider";
 
@@ -68,6 +69,7 @@ function PainelMenu({
       <SidebarUserInfo
         perfilCarregado={perfilCarregado}
         compacto={compacto}
+        onNavigate={onNavigate}
       />
     </div>
   );
@@ -278,6 +280,7 @@ export function AppShell({ children }: Props) {
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-slate-50/80 dark:bg-panel-bg">
           <div className="w-full max-w-full min-w-0 flex-1 px-4 py-6 md:px-6">
+            <PlanoInativoBanner perfilCarregado={perfilCarregado} />
             {children}
           </div>
         </main>

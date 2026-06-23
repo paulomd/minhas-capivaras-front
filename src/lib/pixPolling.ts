@@ -8,9 +8,12 @@ export type PixPollingCallbacks = {
 };
 
 type PollingOptions = {
-  token?: string | null;
   intervaloMs?: number;
 };
+
+function pixFoiPago(dados: PixStatusResponse): boolean {
+  return dados.pago === true || dados.situacao === "PAGO";
+}
 
 export function iniciarPollingPixStatus(
   pixId: number,
@@ -32,7 +35,7 @@ export function iniciarPollingPixStatus(
   const verificar = async () => {
     if (cancelado) return;
 
-    const authToken = options.token ?? obterToken();
+    const authToken = obterToken();
     if (!authToken) {
       callbacks.onErro?.(new Error("Token de autenticação não encontrado."));
       return;
@@ -47,11 +50,14 @@ export function iniciarPollingPixStatus(
       });
 
       if (!resposta.ok) {
+        if (resposta.status >= 500) {
+          return;
+        }
         throw new Error(`HTTP ${resposta.status}`);
       }
 
       const dados = (await resposta.json()) as PixStatusResponse;
-      if (dados.pago) {
+      if (pixFoiPago(dados)) {
         parar();
         callbacks.onPago();
       }

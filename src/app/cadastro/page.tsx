@@ -1,14 +1,16 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import SenhaInput, { validarSenha } from "@/components/SenhaInput";
 import { PixPagamento } from "@/components/pix/PixPagamento";
 import { ApiError, apiFetch } from "@/lib/apiFetch";
 import { TOKEN_STORAGE_KEY } from "@/lib/constants";
+import { queryCadastroFromSearchParams } from "@/lib/cadastroWizard";
+import { obterPerfilSessao } from "@/lib/usuarioSessao";
 import { PlanoCardSelecao } from "@/components/planos/PlanoCardSelecao";
 import { PeriodoCardSelecao } from "@/components/planos/PeriodoCardSelecao";
 import type { Plano, PeriodoAssinatura } from "@/types/plano";
@@ -34,8 +36,27 @@ function ehErroDeTelefone(mensagem: string): boolean {
 }
 
 export default function CadastroPage() {
+  return (
+    <Suspense fallback={<CadastroCarregando />}>
+      <CadastroWizard />
+    </Suspense>
+  );
+}
+
+function CadastroCarregando() {
+  return (
+    <main className="pagina-publica flex min-h-screen items-center justify-center bg-slate-100">
+      <p className="text-sm text-slate-600">Carregando…</p>
+    </main>
+  );
+}
+
+function CadastroWizard() {
   const router = useRouter();
-  const [passo, setPasso] = useState(0);
+  const searchParams = useSearchParams();
+  const { passoPlano, renovar } = queryCadastroFromSearchParams(searchParams);
+
+  const [passo, setPasso] = useState(() => (renovar ? 3 : passoPlano ? 1 : 0));
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [fone, setFone] = useState("");
@@ -46,7 +67,8 @@ export default function CadastroPage() {
   const [periodoId, setPeriodoId] = useState<number | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [pix, setPix] = useState<Pix | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [modoRenovacao, setModoRenovacao] = useState(renovar);
+  const [loading, setLoading] = useState(renovar);
   const [erro, setErro] = useState<string | null>(null);
   const [erroEmail, setErroEmail] = useState<string | null>(null);
   const [erroFone, setErroFone] = useState<string | null>(null);
@@ -96,11 +118,6 @@ export default function CadastroPage() {
   };
 
   useEffect(() => {
-    const authSalvo = localStorage.getItem(TOKEN_STORAGE_KEY);
-    if (authSalvo) setToken(authSalvo);
-  }, []);
-
-  useEffect(() => {
     if (passo === 1) {
       apiFetch<Plano[]>("/planos")
         .then((d) => setPlanos(Array.isArray(d) ? d : []))
@@ -114,6 +131,112 @@ export default function CadastroPage() {
   }, [passo]);
 
   const planoSelecionado = planos.find((p) => p.id === planoId) ?? null;
+
+  const buscarPlanoPorId = async (id: number): Promise<Plano | null> => {
+    const naLista = planos.find((p) => p.id === id);
+    if (naLista) return naLista;
+    try {
+      const lista = await apiFetch<Plano[]>("/planos");
+      const normalizada = Array.isArray(lista) ? lista : [];
+      setPlanos(normalizada);
+      return normalizada.find((p) => p.id === id) ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  const concluirSelecaoPeriodo = async (
+    authToken: string,
+    planoIdEscolhido: number,
+    periodoEscolhido: number,
+    planoParaFree?: Plano | null,
+  ) => {
+    const plano =
+      planoParaFree ??
+      planos.find((p) => p.id === planoIdEscolhido) ??
+      (await buscarPlanoPorId(planoIdEscolhido));
+
+    if (plano?.valorBase === 0) {
+      await apiFetch("/usuarios/ativar-plano-free", {
+        method: "POST",
+        token: authToken,
+        body: JSON.stringify({
+          planoId: planoIdEscolhido,
+          periodoId: periodoEscolhido,
+        }),
+      });
+      router.push((modoRenovacao || token) ? "/inicio" : "/login");
+      return;
+    }
+
+    const pixResp = await apiFetch<Pix>("/usuarios/pix-assinatura", {
+      method: "POST",
+      token: authToken,
+      body: JSON.stringify({
+        planoId: planoIdEscolhido,
+        periodoId: periodoEscolhido,
+      }),
+    });
+    setPix(pixResp);
+    setPasso(3);
+  };
+
+  const iniciarRenovacaoPlanoAtual = async (
+    planoIdRenovar: number,
+    periodoIdRenovar: number,
+    authToken: string,
+  ) => {
+    setErro(null);
+    setModoRenovacao(true);
+    setPlanoId(planoIdRenovar);
+    setPeriodoId(periodoIdRenovar);
+
+    const plano = await buscarPlanoPorId(planoIdRenovar);
+    await concluirSelecaoPeriodo(
+      authToken,
+      planoIdRenovar,
+      periodoIdRenovar,
+      plano,
+    );
+  };
+
+  useEffect(() => {
+    const authSalvo = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (authSalvo) setToken(authSalvo);
+
+    if (renovar) {
+      if (!authSalvo) {
+        router.replace("/login");
+        return;
+      }
+      const perfil = obterPerfilSessao();
+      if (!perfil?.planoId || !perfil?.periodoId) {
+        setErro(
+          "Não foi possível identificar seu plano atual. Escolha um plano abaixo.",
+        );
+        setPasso(1);
+        setModoRenovacao(false);
+        setLoading(false);
+        return;
+      }
+      void iniciarRenovacaoPlanoAtual(
+        perfil.planoId,
+        perfil.periodoId,
+        authSalvo,
+      )
+        .catch((err) =>
+          setErro(
+            err instanceof Error ? err.message : "Erro ao preparar renovação.",
+          ),
+        )
+        .finally(() => setLoading(false));
+      return;
+    }
+
+    if (passoPlano && authSalvo) {
+      setPasso(1);
+    }
+  }, [router, renovar, passoPlano]);
 
   const autenticarPasso1 = async (emailCadastro: string): Promise<string> => {
     const resp = await apiFetch<RegistroResponse>("/usuarios/registrar", {
@@ -157,29 +280,6 @@ export default function CadastroPage() {
     }
   };
 
-  const concluirSelecaoPeriodo = async (
-    authToken: string,
-    periodoEscolhido: number,
-  ) => {
-    if (planoSelecionado?.valorBase === 0) {
-      await apiFetch("/usuarios/ativar-plano-free", {
-        method: "POST",
-        token: authToken,
-        body: JSON.stringify({ planoId, periodoId: periodoEscolhido }),
-      });
-      router.push("/login");
-      return;
-    }
-
-    const pixResp = await apiFetch<Pix>("/usuarios/pix-assinatura", {
-      method: "POST",
-      token: authToken,
-      body: JSON.stringify({ planoId, periodoId: periodoEscolhido }),
-    });
-    setPix(pixResp);
-    setPasso(3);
-  };
-
   const handlePasso4 = async (periodoIdParam?: number) => {
     const periodoEscolhido = periodoIdParam ?? periodoId;
     if (!planoId || !periodoEscolhido) return;
@@ -203,13 +303,17 @@ export default function CadastroPage() {
     }
 
     try {
-      await concluirSelecaoPeriodo(authToken, periodoEscolhido);
+      await concluirSelecaoPeriodo(authToken, planoId, periodoEscolhido);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         const tokenRenovado = await renovarToken();
         if (tokenRenovado) {
           try {
-            await concluirSelecaoPeriodo(tokenRenovado, periodoEscolhido);
+            await concluirSelecaoPeriodo(
+              tokenRenovado,
+              planoId,
+              periodoEscolhido,
+            );
             return;
           } catch (retryErr) {
             setErro(
@@ -272,7 +376,13 @@ export default function CadastroPage() {
             </div>
           )}
 
-          {passo === 0 && (
+          {loading && modoRenovacao && !pix && (
+            <p className="mb-4 text-center text-sm text-slate-600">
+              Preparando pagamento do seu plano atual…
+            </p>
+          )}
+
+          {passo === 0 && !(modoRenovacao && loading) && (
             <form onSubmit={handlePasso1} className="space-y-4">
               <h2 className="text-xl font-semibold text-slate-900">
                 Seus dados
@@ -443,7 +553,12 @@ export default function CadastroPage() {
               <h2 className="text-xl font-semibold text-slate-900">
                 Pagamento via Pix
               </h2>
-              <PixPagamento pix={pix} redirecionarAposPago="/login" />
+              <PixPagamento
+                pix={pix}
+                redirecionarAposPago={
+                  modoRenovacao || token ? "/inicio" : "/login"
+                }
+              />
             </div>
           )}
         </div>

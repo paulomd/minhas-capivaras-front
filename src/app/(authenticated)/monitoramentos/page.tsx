@@ -4,10 +4,13 @@ import { FormEvent, useEffect, useState } from "react";
 import { Plus, Trash2, Loader2, Radar } from "lucide-react";
 import { useAppMessage } from "@/components/layout/AppMessageProvider";
 import { useConfirm } from "@/components/ui/ConfirmProvider";
+import { PixPagamento } from "@/components/pix/PixPagamento";
 import { apiFetch } from "@/lib/apiFetch";
 import { formatarData } from "@/lib/format";
-import { obterPerfilSessao } from "@/lib/usuarioSessao";
+import { isErroLimiteMonitoramento } from "@/lib/monitoramentoErro";
+import { obterPerfilSessao, recarregarPerfilSessao } from "@/lib/usuarioSessao";
 import { cpfOuCnpjValido } from "@/lib/cpfCnpj";
+import type { Pix } from "@/types/pix";
 import type {
   CriarMonitoramentoPayload,
   Monitoramento,
@@ -159,12 +162,18 @@ export default function MonitoramentosPage() {
   const [mostrarForm, setMostrarForm] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [modoPagamentoExtra, setModoPagamentoExtra] = useState(false);
+  const [pixExtra, setPixExtra] = useState<Pix | null>(null);
+  const [carregandoPixExtra, setCarregandoPixExtra] = useState(false);
+  const [monitoramentoPendente, setMonitoramentoPendente] =
+    useState<CriarMonitoramentoPayload | null>(null);
 
   const [tipoDocumento, setTipoDocumento] = useState<TipoDocumento | "">("");
   const [documento, setDocumento] = useState("");
   const [ufDocumento, setUfDocumento] = useState("");
   const [email, setEmail] = useState("");
   const [fone, setFone] = useState("");
+  const [planoAtivo, setPlanoAtivo] = useState<boolean | null>(null);
 
   const carregar = async () => {
     setCarregando(true);
@@ -185,9 +194,50 @@ export default function MonitoramentosPage() {
     if (perfil) {
       setEmail(perfil.email ?? "");
       setFone(perfil.fone ?? "");
+      setPlanoAtivo(perfil.planoAtivo);
     }
     void carregar();
   }, []);
+
+  const podeCadastrarMonitoramento = planoAtivo === true;
+
+  const carregarPixMonitoramentoExtra = async () => {
+    setCarregandoPixExtra(true);
+    setErro(null);
+    try {
+      const pix = await apiFetch<Pix>("/pix/monitoramento-adicional", {
+        auth: true,
+      });
+      setPixExtra(pix);
+      setModoPagamentoExtra(true);
+    } catch (e) {
+      setErro(
+        e instanceof Error
+          ? e.message
+          : "Erro ao gerar PIX de monitoramento adicional.",
+      );
+    } finally {
+      setCarregandoPixExtra(false);
+    }
+  };
+
+  const cadastrarMonitoramento = async (payload: CriarMonitoramentoPayload) => {
+    await apiFetch("/monitoramentos", {
+      method: "POST",
+      auth: true,
+      body: JSON.stringify(payload),
+    });
+    mostrarMensagem("Monitoramento cadastrado com sucesso!");
+    setMostrarForm(false);
+    setModoPagamentoExtra(false);
+    setPixExtra(null);
+    setMonitoramentoPendente(null);
+    setDocumento("");
+    setTipoDocumento("");
+    setUfDocumento("");
+    await carregar();
+    await recarregarPerfilSessao();
+  };
 
   const validarForm = (): string | null => {
     if (!tipoDocumento) return "Selecione o tipo de documento.";
@@ -220,21 +270,32 @@ export default function MonitoramentosPage() {
 
     setSalvando(true);
     try {
-      await apiFetch("/monitoramentos", {
-        method: "POST",
-        auth: true,
-        body: JSON.stringify(payload),
-      });
-      mostrarMensagem("Monitoramento cadastrado com sucesso!");
-      setMostrarForm(false);
-      setDocumento("");
-      setTipoDocumento("");
-      setUfDocumento("");
-      await carregar();
+      await cadastrarMonitoramento(payload);
     } catch (err) {
-      setErro(err instanceof Error ? err.message : "Erro ao cadastrar.");
+      if (isErroLimiteMonitoramento(err)) {
+        setMonitoramentoPendente(payload);
+        await carregarPixMonitoramentoExtra();
+      } else {
+        setErro(err instanceof Error ? err.message : "Erro ao cadastrar.");
+      }
     } finally {
       setSalvando(false);
+    }
+  };
+
+  const finalizarPagamentoMonitoramentoExtra = async () => {
+    await recarregarPerfilSessao();
+    if (!monitoramentoPendente) return;
+    try {
+      await cadastrarMonitoramento(monitoramentoPendente);
+    } catch (err) {
+      setErro(
+        err instanceof Error
+          ? err.message
+          : "Pagamento confirmado, mas falhou ao cadastrar o monitoramento.",
+      );
+      setModoPagamentoExtra(false);
+      setPixExtra(null);
     }
   };
 
@@ -254,6 +315,7 @@ export default function MonitoramentosPage() {
         auth: true,
       });
       await carregar();
+      await recarregarPerfilSessao();
     } catch (err) {
       setErro(err instanceof Error ? err.message : "Erro ao remover.");
     }
@@ -276,20 +338,69 @@ export default function MonitoramentosPage() {
         </section>
         <button
           type="button"
-          onClick={() => setMostrarForm((v) => !v)}
-          className="inline-flex items-center gap-2 rounded-lg bg-brand-orange px-4 py-2 text-sm font-semibold text-white hover:bg-orange-500"
+          onClick={() => {
+            if (!podeCadastrarMonitoramento) return;
+            setMostrarForm((v) => !v);
+          }}
+          disabled={!podeCadastrarMonitoramento}
+          title={
+            !podeCadastrarMonitoramento
+              ? "Renove seu plano para cadastrar monitoramentos"
+              : undefined
+          }
+          className="inline-flex items-center gap-2 rounded-lg bg-brand-orange px-4 py-2 text-sm font-semibold text-white hover:bg-orange-500 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-brand-orange"
         >
           <Plus className="h-4 w-4" />
           Novo monitoramento
         </button>
       </div>
 
-      {erro && (
+      {erro && !modoPagamentoExtra && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800/50 dark:bg-red-950/40 dark:text-red-300">
           {erro}
         </div>
       )}
-      {mostrarForm && (
+      {modoPagamentoExtra && pixExtra && (
+        <section
+          className="rounded-xl border border-amber-200 bg-white p-6 shadow-sm space-y-4 dark:border-amber-800/40 dark:bg-panel-card"
+        >
+          <div>
+            <h2 className="text-lg font-semibold uppercase text-brand-orange">
+              Monitoramento extra
+            </h2>
+            <p className="mt-2 text-sm text-slate-600 dark:text-panel-muted">
+              Você já atingiu o limite de monitoramento do seu plano, mas você
+              pode adquirir monitoramentos extras.
+            </p>
+          </div>
+          <PixPagamento
+            pix={pixExtra}
+            semRedirecionamento
+            mensagemPosPagamento="Pagamento confirmado! Cadastrando monitoramento…"
+            aoPagar={finalizarPagamentoMonitoramentoExtra}
+          />
+          <div className="flex justify-end border-t border-slate-100 pt-4 dark:border-panel-border">
+            <button
+              type="button"
+              onClick={() => {
+                setModoPagamentoExtra(false);
+                setPixExtra(null);
+                setMonitoramentoPendente(null);
+                setErro(null);
+              }}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-panel-border dark:bg-panel-menu dark:text-white"
+            >
+              Voltar
+            </button>
+          </div>
+        </section>
+      )}
+      {carregandoPixExtra && (
+        <p className="text-sm text-slate-500 dark:text-panel-muted">
+          Gerando PIX de monitoramento adicional…
+        </p>
+      )}
+      {mostrarForm && podeCadastrarMonitoramento && !modoPagamentoExtra && (
         <form
           onSubmit={handleSubmit}
           className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4 dark:border-panel-border dark:bg-panel-card"
