@@ -119,6 +119,9 @@ export function PixPagamento({
         <p className="text-3xl font-bold text-emerald-700">
           {formatarMoeda(pix.valor)}
         </p>
+        {pix.descricao && (
+          <p className="mt-2 text-sm text-slate-600">{pix.descricao}</p>
+        )}
       </div>
 
       <p className="text-center text-sm text-slate-600">

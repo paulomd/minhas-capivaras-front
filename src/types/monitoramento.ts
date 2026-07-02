@@ -10,6 +10,8 @@ export type Monitoramento = {
   dataUltimaConsulta: string | null;
   quantidadeNotificada: number;
   dataCadastro: string | null;
+  importacaoEmProgresso: boolean;
+  progressoImportacaoPercentual: number | null;
 };
 
 export type CriarMonitoramentoPayload = {
@@ -18,4 +20,9 @@ export type CriarMonitoramentoPayload = {
   ufDocumento?: string;
   fone?: string;
   email?: string;
+};
+
+export type AtualizarMonitoramentoPayload = {
+  email?: string;
+  fone?: string;
 };
